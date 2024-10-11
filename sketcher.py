@@ -31,6 +31,10 @@ MIN_DETAIL_FACTOR = 0.7  # Minimum detail factor. Prevents over-simplification o
 MAX_DETAIL_FACTOR = 1.2  # Maximum detail factor. Limits complexity for low-resolution images.
 REFERENCE_RESOLUTION = 1000 * 1000  # Reference resolution for detail factor calculation (1 megapixel).
 
+# Grid parameters
+GRID_ROWS = 14  # Number of rows in the grid
+GRID_COLS = 14  # Number of columns in the grid
+
 def detect_outlines(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -76,12 +80,12 @@ def order_lines(lines, mode='length', length_threshold=50):
     elif mode == 'horizontal':
         return lines[lines[:, 0].argsort()]  # Sort by x1 coordinate
     elif mode == 'grid':
-        # Divide the image into a 4x4 grid and sort lines within each cell
+        # Divide the image into a GRID_ROWS x GRID_COLS grid and sort lines within each cell
         height, width = np.max(lines[:, [1, 3]]), np.max(lines[:, [0, 2]])
-        grid_h, grid_w = height // 4, width // 4
+        grid_h, grid_w = height // GRID_ROWS, width // GRID_COLS
         cells = []
-        for i in range(4):
-            for j in range(4):
+        for i in range(GRID_ROWS):
+            for j in range(GRID_COLS):
                 cell_lines = lines[(lines[:, 0] >= j*grid_w) & (lines[:, 0] < (j+1)*grid_w) &
                                    (lines[:, 1] >= i*grid_h) & (lines[:, 1] < (i+1)*grid_h)]
                 cells.append(cell_lines)
