@@ -12,28 +12,30 @@ ANIMATION_DURATION = 10  # Total duration of the animation in seconds
 TARGET_FRAMES = 100  # Target number of frames for the animation. Actual frames may vary slightly.
 OUTLINE_RATIO = 0.1  # Ratio of frames dedicated to outlines (30% in this case)
 
+# Standard width for processing
+STANDARD_WIDTH = 2048
+
 # Line detection parameters
-MIN_LINE_LENGTH = 10  # Minimum length of line to be detected. Smaller values detect more short lines.
-MAX_LINE_GAP = 14  # Maximum gap between line segments to treat them as a single line. Larger values may connect more segments.
-MAX_LINES = 10000  # Maximum number of lines to process. Limits computation for very complex images.
+MIN_LINE_LENGTH = 20  # Minimum length of line to be detected. Smaller values detect more short lines.
+MAX_LINE_GAP = 10  # Maximum gap between line segments to treat them as a single line. Larger values may connect more segments.
+MAX_LINES = 15000  # Maximum number of lines to process. Limits computation for very complex images.
 
 # Line length thresholds
-MIN_OUTLINE_LENGTH = 30  # Minimum length for a line to be considered an outline. Affects line categorization.
+MIN_OUTLINE_LENGTH = 50  # Minimum length for a line to be considered an outline. Affects line categorization.
 MIN_DETAIL_LENGTH = 30  # Minimum length for a line to be considered a detail. Affects line categorization.
 
 # Shading parameters
-MIN_SHADING_THRESHOLD = 30  # Maximum length of line to apply shading. Larger values shade more lines.
-MIN_SHADING_DENSITY = 9  # Controls density of shading lines. Smaller values create denser shading.
-SHADING_LINE_LENGTH = 5  # Length of individual shading lines. Larger values create more noticeable shading.
-
-# Detail factor parameters
-MIN_DETAIL_FACTOR = 0.7  # Minimum detail factor. Prevents over-simplification of high-resolution images.
-MAX_DETAIL_FACTOR = 1.2  # Maximum detail factor. Limits complexity for low-resolution images.
-REFERENCE_RESOLUTION = 1000 * 1000  # Reference resolution for detail factor calculation (1 megapixel).
+MIN_SHADING_THRESHOLD = 40  # Maximum length of line to apply shading. Larger values shade more lines.
+MIN_SHADING_DENSITY = 8  # Controls density of shading lines. Smaller values create denser shading.
+SHADING_LINE_LENGTH = 8  # Length of individual shading lines. Larger values create more noticeable shading.
 
 # Grid parameters
-GRID_ROWS = 14  # Number of rows in the grid
-GRID_COLS = 14  # Number of columns in the grid
+GRID_ROWS = 16  # Number of rows in the grid
+GRID_COLS = 16  # Number of columns in the grid
+
+def resize_image(image, width=STANDARD_WIDTH):
+    height = int(image.shape[0] * (width / image.shape[1]))
+    return cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
 
 def detect_outlines(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -106,7 +108,7 @@ def draw_line_with_shading(img, x1, y1, x2, y2, intensity, length, is_outline, s
             cv2.line(img, (shade_x, shade_y), (end_x, end_y), int(255 - intensity * 0.5), 1)
 
 def main():
-    global height, width, sketch_image
+    global sketch_image, original_height, original_width
 
     root = tk.Tk()
     root.title("OWSketcher")
@@ -134,38 +136,28 @@ def main():
     canvas_widget.pack(expand=True, fill=tk.BOTH)
 
     def process_image(image_path):
-        global sketch_image
+        global sketch_image, original_height, original_width
         image = cv2.imread(image_path)
         if image is None:
             tk.messagebox.showerror("Error", f"Unable to read image at {image_path}")
             return
 
+        original_height, original_width = image.shape[:2]
+        image = resize_image(image)
         height, width = image.shape[:2]
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-        detail_factor = max(MIN_DETAIL_FACTOR, min(MAX_DETAIL_FACTOR, np.sqrt((height * width) / REFERENCE_RESOLUTION)))
 
         outline_edges = detect_outlines(image)
         detail_edges = detect_details(image)
 
-        max_lines = int(min(MAX_LINES, height * width // 100) * detail_factor)
-        min_line_length = max(MIN_LINE_LENGTH, int(MIN_LINE_LENGTH * 1.5 / detail_factor))
-        max_line_gap = max(MAX_LINE_GAP, int(MAX_LINE_GAP * 1.5 / detail_factor))
+        outline_lines = get_lines_with_intensity(outline_edges, gray, MAX_LINES // 2, MIN_LINE_LENGTH, MAX_LINE_GAP)
+        detail_lines = get_lines_with_intensity(detail_edges, gray, MAX_LINES // 2, MIN_LINE_LENGTH, MAX_LINE_GAP)
 
-        outline_lines = get_lines_with_intensity(outline_edges, gray, max_lines // 2, min_line_length, max_line_gap)
-        detail_lines = get_lines_with_intensity(detail_edges, gray, max_lines // 2, min_line_length, max_line_gap)
-
-        length_threshold_outline = max(MIN_OUTLINE_LENGTH, int(MIN_OUTLINE_LENGTH * 2 / detail_factor))
-        length_threshold_detail = max(MIN_DETAIL_LENGTH, int(MIN_DETAIL_LENGTH * 2 / detail_factor))
-
-        outline_lines = order_lines(outline_lines, mode='length', length_threshold=length_threshold_outline)
+        outline_lines = order_lines(outline_lines, mode='length', length_threshold=MIN_OUTLINE_LENGTH)
         detail_lines = order_lines(detail_lines, mode='grid')
 
         outline_frames = int(TARGET_FRAMES * OUTLINE_RATIO)
         interval = int(ANIMATION_DURATION * 1000 / TARGET_FRAMES)
-
-        shading_threshold = max(MIN_SHADING_THRESHOLD, int(MIN_SHADING_THRESHOLD * 2 / detail_factor))
-        shading_density = max(MIN_SHADING_DENSITY, int(MIN_SHADING_DENSITY * 2 / detail_factor))
 
         sketch_image = np.full((height, width), 255, dtype=np.uint8)
 
@@ -179,13 +171,13 @@ def main():
                 lines_to_draw = int(len(outline_lines) * progress)
                 for i in range(lines_to_draw):
                     x1, y1, x2, y2, intensity, length = outline_lines[i]
-                    draw_line_with_shading(sketch_image, x1, y1, x2, y2, intensity, length, True, shading_threshold, shading_density)
+                    draw_line_with_shading(sketch_image, x1, y1, x2, y2, intensity, length, True, MIN_SHADING_THRESHOLD, MIN_SHADING_DENSITY)
             else:
                 detail_progress = (frame - outline_frames) / (TARGET_FRAMES - outline_frames)
                 lines_to_draw = int(len(detail_lines) * detail_progress)
                 for i in range(lines_to_draw):
                     x1, y1, x2, y2, intensity, length = detail_lines[i]
-                    draw_line_with_shading(sketch_image, x1, y1, x2, y2, intensity, length, False, shading_threshold, shading_density)
+                    draw_line_with_shading(sketch_image, x1, y1, x2, y2, intensity, length, False, MIN_SHADING_THRESHOLD, MIN_SHADING_DENSITY)
 
             img_plot.set_array(sketch_image)
             progress = min(100, (frame + 1) / TARGET_FRAMES * 100)
