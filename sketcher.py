@@ -4,6 +4,30 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from scipy.spatial import distance
 
+# Configuration constants
+ANIMATION_DURATION = 10  # Animation duration in seconds
+TARGET_FRAMES = 100  # Target number of frames for the animation
+OUTLINE_PASSES = 3  # Number of passes for outlines
+
+# Line detection parameters
+MIN_LINE_LENGTH = 12
+MAX_LINE_GAP = 6
+MAX_LINES = 10000
+
+# Line length thresholds
+MIN_OUTLINE_LENGTH = 35
+MIN_DETAIL_LENGTH = 25
+
+# Shading parameters
+MIN_SHADING_THRESHOLD = 35
+MIN_SHADING_DENSITY = 10
+SHADING_LINE_LENGTH = 4
+
+# Detail factor parameters
+MIN_DETAIL_FACTOR = 0.5
+MAX_DETAIL_FACTOR = 1.0
+REFERENCE_RESOLUTION = 1000 * 1000  # 1 megapixel as reference
+
 def detect_outlines(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -53,14 +77,14 @@ def draw_line_with_shading(img, x1, y1, x2, y2, intensity, length, is_outline, s
     cv2.line(img, (int(x1), int(y1)), (int(x2), int(y2)), int(255 - intensity), 1)
     
     if not is_outline and length < shading_threshold:
-        num_shade_lines = int(length / shading_density)
+        num_shade_lines = max(1, int(length / shading_density))
         for _ in range(num_shade_lines):
             t = np.random.random()
             shade_x = int(x1 + t * (x2 - x1))
             shade_y = int(y1 + t * (y2 - y1))
             angle = np.arctan2(y2 - y1, x2 - x1) + np.pi/2
-            end_x = int(shade_x + 2 * np.cos(angle))
-            end_y = int(shade_y + 2 * np.sin(angle))
+            end_x = int(shade_x + SHADING_LINE_LENGTH * np.cos(angle))
+            end_y = int(shade_y + SHADING_LINE_LENGTH * np.sin(angle))
             cv2.line(img, (shade_x, shade_y), (end_x, end_y), int(255 - intensity * 0.5), 1)
 
 def animate_sketch(frame, outline_lines, detail_lines, img_plot, progress_text, lines_per_frame, outline_passes, shading_threshold, shading_density):
@@ -100,34 +124,32 @@ def main():
     height, width = image.shape[:2]
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     
-    # Calculate detail factor based on image resolution
-    detail_factor = np.sqrt((height * width) / (1000 * 1000))  # Normalized to 1 for a 1000x1000 image
+    # Calculate detail factor based on image resolution, with bounds
+    detail_factor = max(MIN_DETAIL_FACTOR, min(MAX_DETAIL_FACTOR, np.sqrt((height * width) / REFERENCE_RESOLUTION)))
     
     outline_edges = detect_outlines(image)
     detail_edges = detect_details(image)
     
-    max_lines = int(min(10000, height * width // 100) * detail_factor)
-    min_line_length = max(5, int(10 / detail_factor))
-    max_line_gap = max(3, int(5 / detail_factor))
+    max_lines = int(min(MAX_LINES, height * width // 100) * detail_factor)
+    min_line_length = max(MIN_LINE_LENGTH, int(MIN_LINE_LENGTH * 1.5 / detail_factor))
+    max_line_gap = max(MAX_LINE_GAP, int(MAX_LINE_GAP * 1.5 / detail_factor))
     
     outline_lines = get_lines_with_intensity(outline_edges, gray, max_lines // 2, min_line_length, max_line_gap)
     detail_lines = get_lines_with_intensity(detail_edges, gray, max_lines // 2, min_line_length, max_line_gap)
     
-    length_threshold_outline = max(20, int(50 / detail_factor))
-    length_threshold_detail = max(10, int(30 / detail_factor))
+    length_threshold_outline = max(MIN_OUTLINE_LENGTH, int(MIN_OUTLINE_LENGTH * 2 / detail_factor))
+    length_threshold_detail = max(MIN_DETAIL_LENGTH, int(MIN_DETAIL_LENGTH * 2 / detail_factor))
     
     outline_lines = order_lines(outline_lines, mode='length', length_threshold=length_threshold_outline)
     detail_lines = order_lines(detail_lines, mode='length', length_threshold=length_threshold_detail)
     
-    outline_passes = 3  # Number of passes for outlines
-    total_lines = len(outline_lines) * outline_passes + len(detail_lines)
-    target_frames = 100  # Aim for 100 frames in total (reduced from 200 for faster animation)
-    lines_per_frame = max(1, total_lines // target_frames)
+    total_lines = len(outline_lines) * OUTLINE_PASSES + len(detail_lines)
+    lines_per_frame = max(1, total_lines // TARGET_FRAMES)
     actual_frames = -(-total_lines // lines_per_frame)  # Ceiling division
-    interval = max(1, int(10000 / actual_frames))  # Ensure minimum 1ms interval, targeting 10 seconds
+    interval = max(1, int(ANIMATION_DURATION * 1000 / actual_frames))  # Ensure minimum 1ms interval
     
-    shading_threshold = max(20, int(50 / detail_factor))
-    shading_density = max(5, int(10 / detail_factor))
+    shading_threshold = max(MIN_SHADING_THRESHOLD, int(MIN_SHADING_THRESHOLD * 2 / detail_factor))
+    shading_density = max(MIN_SHADING_DENSITY, int(MIN_SHADING_DENSITY * 2 / detail_factor))
     
     sketch_image = np.full((height, width), 255, dtype=np.uint8)
     
@@ -137,7 +159,7 @@ def main():
     progress_text = ax.text(0.02, 0.98, '', transform=ax.transAxes, color='red', fontsize=12, verticalalignment='top')
     
     anim = FuncAnimation(fig, animate_sketch, frames=actual_frames,
-                         fargs=(outline_lines, detail_lines, img_plot, progress_text, lines_per_frame, outline_passes, shading_threshold, shading_density),
+                         fargs=(outline_lines, detail_lines, img_plot, progress_text, lines_per_frame, OUTLINE_PASSES, shading_threshold, shading_density),
                          interval=interval, blit=True, repeat=False)
     
     plt.show()
