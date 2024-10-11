@@ -13,22 +13,22 @@ TARGET_FRAMES = 100  # Target number of frames for the animation. Actual frames 
 OUTLINE_RATIO = 0.1  # Ratio of frames dedicated to outlines (30% in this case)
 
 # Line detection parameters
-MIN_LINE_LENGTH = 12  # Minimum length of line to be detected. Smaller values detect more short lines.
-MAX_LINE_GAP = 16  # Maximum gap between line segments to treat them as a single line. Larger values may connect more segments.
+MIN_LINE_LENGTH = 10  # Minimum length of line to be detected. Smaller values detect more short lines.
+MAX_LINE_GAP = 14  # Maximum gap between line segments to treat them as a single line. Larger values may connect more segments.
 MAX_LINES = 10000  # Maximum number of lines to process. Limits computation for very complex images.
 
 # Line length thresholds
-MIN_OUTLINE_LENGTH = 35  # Minimum length for a line to be considered an outline. Affects line categorization.
-MIN_DETAIL_LENGTH = 35  # Minimum length for a line to be considered a detail. Affects line categorization.
+MIN_OUTLINE_LENGTH = 30  # Minimum length for a line to be considered an outline. Affects line categorization.
+MIN_DETAIL_LENGTH = 30  # Minimum length for a line to be considered a detail. Affects line categorization.
 
 # Shading parameters
-MIN_SHADING_THRESHOLD = 35  # Maximum length of line to apply shading. Larger values shade more lines.
-MIN_SHADING_DENSITY = 10  # Controls density of shading lines. Smaller values create denser shading.
+MIN_SHADING_THRESHOLD = 30  # Maximum length of line to apply shading. Larger values shade more lines.
+MIN_SHADING_DENSITY = 9  # Controls density of shading lines. Smaller values create denser shading.
 SHADING_LINE_LENGTH = 5  # Length of individual shading lines. Larger values create more noticeable shading.
 
 # Detail factor parameters
-MIN_DETAIL_FACTOR = 0.5  # Minimum detail factor. Prevents over-simplification of high-resolution images.
-MAX_DETAIL_FACTOR = 1.0  # Maximum detail factor. Limits complexity for low-resolution images.
+MIN_DETAIL_FACTOR = 0.7  # Minimum detail factor. Prevents over-simplification of high-resolution images.
+MAX_DETAIL_FACTOR = 1.2  # Maximum detail factor. Limits complexity for low-resolution images.
 REFERENCE_RESOLUTION = 1000 * 1000  # Reference resolution for detail factor calculation (1 megapixel).
 
 def detect_outlines(image):
