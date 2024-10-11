@@ -1,43 +1,47 @@
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
-from scipy.spatial import distance
-import tkinter as tk
-from tkinter import filedialog, ttk
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+# OWSketcher: An image processing tool that converts images into sketch-like drawings
+# This script detects outlines and details in images and animates the drawing process.
+
+import cv2  # OpenCV for image processing
+import numpy as np  # NumPy for numerical operations
+import matplotlib.pyplot as plt  # Matplotlib for plotting
+from matplotlib.animation import FuncAnimation  # For creating animations
+from scipy.spatial import distance  # For spatial computations (unused in current version)
+import tkinter as tk  # Tkinter for GUI
+from tkinter import filedialog, ttk  # Additional Tkinter modules
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # For embedding Matplotlib in Tkinter
 
 # Animation settings
 ANIMATION_DURATION = 10  # Total duration of the animation in seconds
-TARGET_FRAMES = 100  # Target number of frames for the animation. Actual frames may vary slightly.
-OUTLINE_RATIO = 0.1  # Ratio of frames dedicated to outlines (30% in this case)
+TARGET_FRAMES = 100  # Target number of frames for the animation
+OUTLINE_RATIO = 0.1  # Ratio of frames dedicated to outlines
 
-# Standard width for processing
-STANDARD_WIDTH = 2048
+STANDARD_WIDTH = 2048  # Standard width for processing
 
 # Line detection parameters
-MIN_LINE_LENGTH = 20  # Minimum length of line to be detected. Smaller values detect more short lines.
-MAX_LINE_GAP = 10  # Maximum gap between line segments to treat them as a single line. Larger values may connect more segments.
-MAX_LINES = 15000  # Maximum number of lines to process. Limits computation for very complex images.
+MIN_LINE_LENGTH = 20  # Minimum length of line to be detected
+MAX_LINE_GAP = 10  # Maximum gap between line segments
+MAX_LINES = 15000  # Maximum number of lines to process
 
 # Line length thresholds
-MIN_OUTLINE_LENGTH = 50  # Minimum length for a line to be considered an outline. Affects line categorization.
-MIN_DETAIL_LENGTH = 30  # Minimum length for a line to be considered a detail. Affects line categorization.
+MIN_OUTLINE_LENGTH = 50  # Minimum length for outlines
+MIN_DETAIL_LENGTH = 30  # Minimum length for details
 
 # Shading parameters
-MIN_SHADING_THRESHOLD = 40  # Maximum length of line to apply shading. Larger values shade more lines.
-MIN_SHADING_DENSITY = 8  # Controls density of shading lines. Smaller values create denser shading.
-SHADING_LINE_LENGTH = 8  # Length of individual shading lines. Larger values create more noticeable shading.
+MIN_SHADING_THRESHOLD = 40  # Maximum length of line to apply shading
+MIN_SHADING_DENSITY = 8  # Controls density of shading lines
+SHADING_LINE_LENGTH = 8  # Length of individual shading lines
 
 # Grid parameters
 GRID_ROWS = 16  # Number of rows in the grid
 GRID_COLS = 16  # Number of columns in the grid
 
 def resize_image(image, width=STANDARD_WIDTH):
+    """Resize the input image to a standard width while maintaining aspect ratio."""
     height = int(image.shape[0] * (width / image.shape[1]))
     return cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
 
 def detect_outlines(image):
+    """Detect outlines in the input image using edge detection techniques."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blurred, 50, 150)
@@ -46,12 +50,14 @@ def detect_outlines(image):
     return dilated
 
 def detect_details(image):
+    """Detect fine details in the input image using edge detection techniques."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (3, 3), 0)
     edges = cv2.Canny(blurred, 30, 100)
     return edges
 
 def get_lines_with_intensity(edges, gray, max_lines, min_line_length, max_line_gap):
+    """Detect lines in the edge image and calculate their intensities."""
     lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=30, minLineLength=min_line_length, maxLineGap=max_line_gap)
     if lines is None:
         return np.array([])
@@ -71,6 +77,7 @@ def get_lines_with_intensity(edges, gray, max_lines, min_line_length, max_line_g
     return lines_with_intensity
 
 def order_lines(lines, mode='length', length_threshold=50):
+    """Order the detected lines based on different criteria."""
     if mode == 'length':
         long_lines = lines[lines[:, 5] >= length_threshold]
         short_lines = lines[lines[:, 5] < length_threshold]
@@ -82,7 +89,7 @@ def order_lines(lines, mode='length', length_threshold=50):
     elif mode == 'horizontal':
         return lines[lines[:, 0].argsort()]  # Sort by x1 coordinate
     elif mode == 'grid':
-        # Divide the image into a GRID_ROWS x GRID_COLS grid and sort lines within each cell
+        # Divide the image into a grid and sort lines within each cell
         height, width = np.max(lines[:, [1, 3]]), np.max(lines[:, [0, 2]])
         grid_h, grid_w = height // GRID_ROWS, width // GRID_COLS
         cells = []
@@ -94,6 +101,7 @@ def order_lines(lines, mode='length', length_threshold=50):
         return np.concatenate(cells)
 
 def draw_line_with_shading(img, x1, y1, x2, y2, intensity, length, is_outline, shading_threshold, shading_density):
+    """Draw a line on the image with optional shading effect."""
     cv2.line(img, (int(x1), int(y1)), (int(x2), int(y2)), int(255 - intensity), 1)
     
     if not is_outline and length < shading_threshold:
@@ -108,6 +116,7 @@ def draw_line_with_shading(img, x1, y1, x2, y2, intensity, length, is_outline, s
             cv2.line(img, (shade_x, shade_y), (end_x, end_y), int(255 - intensity * 0.5), 1)
 
 def main():
+    """Main function to run the OWSketcher application."""
     global sketch_image, original_height, original_width
 
     root = tk.Tk()
@@ -115,6 +124,7 @@ def main():
     root.geometry("800x600")
 
     def choose_file():
+        """Open a file dialog to choose an image file and process it."""
         file_path = filedialog.askopenfilename(
             filetypes=[
                 ("Image files", "*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff"),
@@ -136,6 +146,7 @@ def main():
     canvas_widget.pack(expand=True, fill=tk.BOTH)
 
     def process_image(image_path):
+        """Process the selected image and create the sketch animation."""
         global sketch_image, original_height, original_width
         image = cv2.imread(image_path)
         if image is None:
@@ -166,6 +177,7 @@ def main():
         ax.axis('off')
 
         def animate_sketch_gui(frame):
+            """Animation function for creating the sketch effect frame by frame."""
             if frame < outline_frames:
                 progress = frame / outline_frames
                 lines_to_draw = int(len(outline_lines) * progress)
