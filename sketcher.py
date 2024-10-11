@@ -4,29 +4,29 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from scipy.spatial import distance
 
-# Configuration constants
-ANIMATION_DURATION = 10  # Animation duration in seconds
-TARGET_FRAMES = 100  # Target number of frames for the animation
-OUTLINE_PASSES = 3  # Number of passes for outlines
+# Animation settings
+ANIMATION_DURATION = 10  # Total duration of the animation in seconds
+TARGET_FRAMES = 100  # Target number of frames for the animation. Actual frames may vary slightly.
+OUTLINE_RATIO = 0.3  # Ratio of frames dedicated to outlines (30% in this case)
 
 # Line detection parameters
-MIN_LINE_LENGTH = 12
-MAX_LINE_GAP = 6
-MAX_LINES = 10000
+MIN_LINE_LENGTH = 12  # Minimum length of line to be detected. Smaller values detect more short lines.
+MAX_LINE_GAP = 6  # Maximum gap between line segments to treat them as a single line. Larger values may connect more segments.
+MAX_LINES = 10000  # Maximum number of lines to process. Limits computation for very complex images.
 
 # Line length thresholds
-MIN_OUTLINE_LENGTH = 35
-MIN_DETAIL_LENGTH = 25
+MIN_OUTLINE_LENGTH = 35  # Minimum length for a line to be considered an outline. Affects line categorization.
+MIN_DETAIL_LENGTH = 5  # Minimum length for a line to be considered a detail. Affects line categorization.
 
 # Shading parameters
-MIN_SHADING_THRESHOLD = 35
-MIN_SHADING_DENSITY = 10
-SHADING_LINE_LENGTH = 4
+MIN_SHADING_THRESHOLD = 35  # Maximum length of line to apply shading. Larger values shade more lines.
+MIN_SHADING_DENSITY = 10  # Controls density of shading lines. Smaller values create denser shading.
+SHADING_LINE_LENGTH = 14  # Length of individual shading lines. Larger values create more noticeable shading.
 
 # Detail factor parameters
-MIN_DETAIL_FACTOR = 0.5
-MAX_DETAIL_FACTOR = 1.0
-REFERENCE_RESOLUTION = 1000 * 1000  # 1 megapixel as reference
+MIN_DETAIL_FACTOR = 0.5  # Minimum detail factor. Prevents over-simplification of high-resolution images.
+MAX_DETAIL_FACTOR = 1.0  # Maximum detail factor. Limits complexity for low-resolution images.
+REFERENCE_RESOLUTION = 1000 * 1000  # Reference resolution for detail factor calculation (1 megapixel).
 
 def detect_outlines(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -87,29 +87,26 @@ def draw_line_with_shading(img, x1, y1, x2, y2, intensity, length, is_outline, s
             end_y = int(shade_y + SHADING_LINE_LENGTH * np.sin(angle))
             cv2.line(img, (shade_x, shade_y), (end_x, end_y), int(255 - intensity * 0.5), 1)
 
-def animate_sketch(frame, outline_lines, detail_lines, img_plot, progress_text, lines_per_frame, outline_passes, shading_threshold, shading_density):
+def animate_sketch(frame, outline_lines, detail_lines, img_plot, progress_text, lines_per_frame, outline_frames, shading_threshold, shading_density):
     global sketch_image
     
-    total_outline_frames = len(outline_lines) * outline_passes // lines_per_frame
-    
-    if frame < total_outline_frames:
+    if frame < outline_frames:
         # Drawing outlines
-        start_idx = (frame * lines_per_frame) % len(outline_lines)
-        end_idx = min(start_idx + lines_per_frame, len(outline_lines))
-        for i in range(start_idx, end_idx):
+        progress = frame / outline_frames
+        lines_to_draw = int(len(outline_lines) * progress)
+        for i in range(lines_to_draw):
             x1, y1, x2, y2, intensity, length = outline_lines[i]
             draw_line_with_shading(sketch_image, x1, y1, x2, y2, intensity, length, True, shading_threshold, shading_density)
     else:
         # Draw details
-        detail_frame = frame - total_outline_frames
-        start_idx = detail_frame * lines_per_frame
-        end_idx = min(start_idx + lines_per_frame, len(detail_lines))
-        for i in range(start_idx, end_idx):
+        detail_progress = (frame - outline_frames) / (TARGET_FRAMES - outline_frames)
+        lines_to_draw = int(len(detail_lines) * detail_progress)
+        for i in range(lines_to_draw):
             x1, y1, x2, y2, intensity, length = detail_lines[i]
             draw_line_with_shading(sketch_image, x1, y1, x2, y2, intensity, length, False, shading_threshold, shading_density)
     
     img_plot.set_array(sketch_image)
-    progress = min(100, (frame + 1) / (total_outline_frames + len(detail_lines) // lines_per_frame) * 100)
+    progress = min(100, (frame + 1) / TARGET_FRAMES * 100)
     progress_text.set_text(f"Progress: {progress:.1f}%")
     
     return [img_plot, progress_text]
@@ -130,6 +127,7 @@ def main():
     outline_edges = detect_outlines(image)
     detail_edges = detect_details(image)
     
+    # Adjust line detection parameters based on detail factor
     max_lines = int(min(MAX_LINES, height * width // 100) * detail_factor)
     min_line_length = max(MIN_LINE_LENGTH, int(MIN_LINE_LENGTH * 1.5 / detail_factor))
     max_line_gap = max(MAX_LINE_GAP, int(MAX_LINE_GAP * 1.5 / detail_factor))
@@ -137,17 +135,18 @@ def main():
     outline_lines = get_lines_with_intensity(outline_edges, gray, max_lines // 2, min_line_length, max_line_gap)
     detail_lines = get_lines_with_intensity(detail_edges, gray, max_lines // 2, min_line_length, max_line_gap)
     
+    # Adjust line categorization thresholds based on detail factor
     length_threshold_outline = max(MIN_OUTLINE_LENGTH, int(MIN_OUTLINE_LENGTH * 2 / detail_factor))
     length_threshold_detail = max(MIN_DETAIL_LENGTH, int(MIN_DETAIL_LENGTH * 2 / detail_factor))
     
     outline_lines = order_lines(outline_lines, mode='length', length_threshold=length_threshold_outline)
     detail_lines = order_lines(detail_lines, mode='length', length_threshold=length_threshold_detail)
     
-    total_lines = len(outline_lines) * OUTLINE_PASSES + len(detail_lines)
-    lines_per_frame = max(1, total_lines // TARGET_FRAMES)
-    actual_frames = -(-total_lines // lines_per_frame)  # Ceiling division
-    interval = max(1, int(ANIMATION_DURATION * 1000 / actual_frames))  # Ensure minimum 1ms interval
+    # Calculate animation parameters
+    outline_frames = int(TARGET_FRAMES * OUTLINE_RATIO)
+    interval = int(ANIMATION_DURATION * 1000 / TARGET_FRAMES)  # Ensure minimum 1ms interval
     
+    # Adjust shading parameters based on detail factor
     shading_threshold = max(MIN_SHADING_THRESHOLD, int(MIN_SHADING_THRESHOLD * 2 / detail_factor))
     shading_density = max(MIN_SHADING_DENSITY, int(MIN_SHADING_DENSITY * 2 / detail_factor))
     
@@ -158,8 +157,8 @@ def main():
     ax.axis('off')
     progress_text = ax.text(0.02, 0.98, '', transform=ax.transAxes, color='red', fontsize=12, verticalalignment='top')
     
-    anim = FuncAnimation(fig, animate_sketch, frames=actual_frames,
-                         fargs=(outline_lines, detail_lines, img_plot, progress_text, lines_per_frame, OUTLINE_PASSES, shading_threshold, shading_density),
+    anim = FuncAnimation(fig, animate_sketch, frames=TARGET_FRAMES,
+                         fargs=(outline_lines, detail_lines, img_plot, progress_text, None, outline_frames, shading_threshold, shading_density),
                          interval=interval, blit=True, repeat=False)
     
     plt.show()
